@@ -1,112 +1,416 @@
-# Cardiovascular Risk Visualization & Prediction (Multimodal AI Hackathon 2026, Track A)
+# CardioVision — Cardiovascular Risk Visualization & Prediction
 
-Predicts **overall coronary artery disease (CAD)** and **stenosis of the three main coronary arteries (LAD, LCX, RCA)** from clinical, ECG, laboratory and echocardiographic data. The predictions are meant to drive an interactive 3D heart view and an explainability dashboard.
+**Multimodal AI Hackathon 2026 | Track A**
 
-> **Disclaimer:** predictions are for decision support and educational purposes only. They are not a substitute for formal diagnostic imaging or professional medical judgement.
+CardioVision is an educational research prototype that predicts overall Coronary Artery Disease (CAD) and potential stenosis in three major coronary arteries: the Left Anterior Descending (LAD), Left Circumflex (LCX), and Right Coronary Artery (RCA).
 
-## Project status
+The system uses clinical, ECG, laboratory, and echocardiographic features to generate model-based predictions. These predictions are designed to support an interactive heart visualization and an explainability dashboard.
 
-| Part | Status |
+> **Medical Disclaimer:** CardioVision is intended for educational and research purposes only. Its predictions are not clinically validated and must not be used as a substitute for professional medical judgment, diagnostic imaging, or clinical evaluation.
+
+## Table of Contents
+
+- [Features](#features)
+- [Project Status](#project-status)
+- [Dataset](#dataset)
+- [Model Performance](#model-performance)
+- [Technology Stack](#technology-stack)
+- [Prerequisites](#prerequisites)
+- [Installation and Setup](#installation-and-setup)
+- [Running the Project](#running-the-project)
+- [API and Prediction Usage](#api-and-prediction-usage)
+- [Explainability Dashboard](#explainability-dashboard)
+- [Project Structure](#project-structure)
+- [Testing](#testing)
+- [Limitations](#limitations)
+- [Future Improvements](#future-improvements)
+- [Dataset Attribution](#dataset-attribution)
+
+## Features
+
+- **CAD Prediction:** Estimates the probability of overall coronary artery disease.
+- **Artery-Specific Prediction:** Estimates the probability of stenosis for LAD, LCX, and RCA.
+- **Machine Learning Comparison:** Evaluates Logistic Regression, Random Forest, and Gradient Boosting.
+- **Interactive Heart Visualization:** Intended to connect artery-specific predictions with a 3D heart model.
+- **Explainable AI:** Provides global feature importance and patient-specific SHAP explanations.
+- **Patient Input Schema:** Defines accepted feature names, types, and allowed values.
+- **Risk Visualization:** Maps model probabilities to LOW, MODERATE, and HIGH presentation categories.
+
+## Project Status
+
+| Component | Status |
 |---|---|
-| Prediction pipeline (CAD + LAD / LCX / RCA) | Done: `train_cad.py`, `predict.py` |
-| Exploratory data analysis | Done: `notebooks/EDA_sani.ipynb` |
-| Input specification for the patient form | Done: `docs/input_schema.json` |
-| SHAP explanations | In progress |
-| 3D heart / coronary visualization | In progress |
-| Web dashboard and API | In progress |
+| CAD and artery prediction pipeline | Implemented |
+| Model training and evaluation | Implemented |
+| Exploratory data analysis | Implemented |
+| Patient input schema | Implemented |
+| SHAP explainability | In progress |
+| 3D heart and coronary visualization | In progress |
+| Web dashboard and API integration | In progress |
+
+Update this table as individual components become fully implemented and tested.
 
 ## Dataset
 
-Extension of the Z-Alizadeh Sani dataset (UCI Machine Learning Repository): 303 patients, 55 input features, four labels. The file is in `datasets/z_alizadeh_sani_extension.xlsx`.
+The project uses an extension of the **Z-Alizadeh Sani dataset**, containing 303 patients, 55 input features, and four prediction targets.
 
-`Cath` (overall CAD), `LAD`, `LCX` and `RCA` are **targets only**. They are removed from the inputs of every model to prevent target leakage.
+Dataset file:
 
-## Results (repeated stratified 5-fold cross-validation, mean ± SD)
+`datasets/z_alizadeh_sani_extension.xlsx`
 
-| Target | ROC-AUC | Accuracy | Precision | Recall | F1 |
-|---|---|---|---|---|---|
+The target columns are:
+
+- `Cath` — Overall CAD
+- `LAD` — LAD stenosis
+- `LCX` — LCX stenosis
+- `RCA` — RCA stenosis
+
+These target columns are excluded from model input features to prevent target leakage.
+
+The input schema is generated in:
+
+`docs/input_schema.json`
+
+The patient form and API must use the exact feature names and permitted values defined in this file.
+
+## Model Performance
+
+The following are the reported results from repeated stratified five-fold cross-validation.
+
+| Target | ROC-AUC | Accuracy | Precision | Recall | F1-score |
+|---|---:|---:|---:|---:|---:|
 | Overall CAD | 0.923 ± 0.039 | 0.863 ± 0.042 | 0.883 ± 0.034 | 0.933 ± 0.038 | 0.907 ± 0.029 |
 | LAD | 0.853 ± 0.044 | 0.790 ± 0.043 | 0.790 ± 0.045 | 0.877 ± 0.056 | 0.830 ± 0.035 |
 | LCX | 0.732 ± 0.063 | 0.682 ± 0.053 | 0.650 ± 0.115 | 0.440 ± 0.100 | 0.516 ± 0.093 |
 | RCA | 0.721 ± 0.054 | 0.677 ± 0.037 | 0.615 ± 0.096 | 0.398 ± 0.107 | 0.475 ± 0.088 |
 
-Random Forest was the best of three compared models (logistic regression, Random Forest, gradient boosting) for all four targets. Precision, recall and F1 use the default 0.5 threshold. LCX and RCA are noticeably weaker: they have fewer positive cases, and the models miss more than half of the true stenoses. Full numbers for every model are in `reports/cv_metrics.csv`; the method and limitations are described in `docs/member1_documentation.md`.
+Random Forest was reported as the best-performing model among the three compared algorithms for all four targets.
 
-## Setup
+Precision, recall, and F1-score use a classification threshold of 0.5. The LCX and RCA models have weaker performance, particularly in recall, and may miss a substantial proportion of positive cases.
+
+Detailed results are available in:
+
+`reports/cv_metrics.csv`
+
+These are reported experimental results, not a guarantee of performance on new patients.
+
+## Technology Stack
+
+The repository's documented components include:
+
+- **Language:** Python
+- **Machine Learning:** scikit-learn
+- **Model Explainability:** SHAP
+- **Data Processing:** pandas and NumPy
+- **Model Persistence:** joblib
+- **Data Visualization:** Streamlit for the explainability dashboard
+- **Testing:** pytest
+- **Frontend Visualization:** React and Three.js-based tooling, if included in the current frontend implementation
+
+Install the Python dependencies from `requirements.txt`. Frontend dependencies, if applicable, should be installed separately from the frontend directory using its package manifest.
+
+## Prerequisites
+
+Install the following before running the project:
+
+- Python 3.10 or another Python version supported by the pinned project dependencies.
+- pip, the Python package installer.
+- Git.
+- A terminal such as PowerShell, Command Prompt, or a Bash terminal.
+- Node.js and npm only if running the React frontend.
+
+Check your installations:
+
+```bash
+python --version
+python -m pip --version
+git --version
+```
+
+For the frontend, if present:
+
+```bash
+node --version
+npm --version
+```
+
+## Installation and Setup
+
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/triiishaha/cardiovascular-project.git
 cd cardiovascular-project
+```
+
+### 2. Create a virtual environment
+
+**Windows — PowerShell:**
+
+```powershell
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, use Command Prompt:
+
+```bat
+venv\Scripts\activate.bat
+```
+
+**Linux or macOS:**
+
+```bash
 python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+source venv/bin/activate
+```
+
+### 3. Install Python dependencies
+
+```bash
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-## Usage
+If installation fails, check the Python version and the package versions specified in `requirements.txt`. Do not install incompatible versions arbitrarily.
 
-**1. Train the models** (about 2 minutes). Writes `models/cad_models.joblib`, `models/metrics.json` and `reports/cv_metrics.csv`:
+### 4. Verify the required files
+
+Ensure the following files are available:
+
+- `datasets/z_alizadeh_sani_extension.xlsx`
+- `train_cad.py`
+- `predict.py`
+- `make_schema.py`
+- `docs/input_schema.json`
+- `docs/sample_patient.json`
+
+The trained model files are generated locally and are not committed to the repository.
+
+## Running the Project
+
+### Step 1: Train the machine learning models
+
+Run:
 
 ```bash
 python train_cad.py
 ```
 
-**2. Predict for a patient:**
+The training script is expected to generate:
 
-```python
-import json
-from predict import predict_patient
+- `models/cad_models.joblib`
+- `models/metrics.json`
+- `reports/cv_metrics.csv`
 
-patient = json.load(open("docs/sample_patient.json"))
-print(predict_patient(patient))
-# {'CAD': {'probability': 0.87, 'risk': 'HIGH'}, 'LAD': {...}, 'LCX': {...}, 'RCA': {...}, ...}
-```
+Create the output directories if the training script does not create them automatically.
 
-Risk bands: LOW below 0.30, MODERATE 0.30 to 0.60, HIGH from 0.60. These are presentation cut-offs, not clinically validated thresholds.
+Training time depends on the machine and dependency versions.
 
-**3. Regenerate the input specification** (after any dataset change):
+### Step 2: Generate the patient input schema
+
+Run:
 
 ```bash
 python make_schema.py
 ```
 
-`docs/input_schema.json` lists every model input with its type and allowed values or range. Requests must use these exact names and values (for example `Sex` is `Male` or `Fmale`). Missing fields are filled with training-set typical values, so the patient form should require all fields.
+This regenerates the input specification and sample patient data based on the dataset.
 
-## Project structure
+Review `docs/input_schema.json` before submitting patient data. The schema defines the expected feature names and permitted values.
 
-```
-train_cad.py            Train and evaluate the CAD / LAD / LCX / RCA models
-predict.py              predict_patient(dict) -> probability and risk band per target
-make_schema.py          Generates docs/input_schema.json and docs/sample_patient.json
-datasets/               Z-Alizadeh Sani extension dataset (and legacy cardio_train.csv)
-docs/                   Input schema, sample patient, modelling documentation
-notebooks/EDA_sani.ipynb  Exploratory analysis of the Track A dataset
-reports/cv_metrics.csv  Cross-validation results for every model and target
-models/                 Trained models (created by train_cad.py, not stored in git)
-app.py, train.py        Earlier baseline (general cardiovascular dataset), kept for reference
+### Step 3: Generate predictions
+
+After training, execute the following from the repository root:
+
+```bash
+python -c "import json; from predict import predict_patient; patient = json.load(open('docs/sample_patient.json', encoding='utf-8')); print(json.dumps(predict_patient(patient), indent=2))"
 ```
 
-## Notes
+The output should contain predictions for CAD, LAD, LCX, and RCA, including probabilities and risk categories, according to the implementation in `predict.py`.
 
-- Trained model files are not stored in git (`.gitignore`). Run `python train_cad.py` after cloning.
-- The earlier baseline (`app.py`, `train.py`, `notebooks/EDA.ipynb`) uses the Kaggle cardiovascular dataset and a different task; it is separate from the Track A pipeline.
-- Dataset source: UCI Machine Learning Repository, Extension of the Z-Alizadeh Sani dataset.
-### Explainability dashboard
+Example output structure:
 
-The Streamlit dashboard provides two complementary views:
+```json
+{
+  "CAD": {
+    "probability": 0.87,
+    "risk": "HIGH"
+  },
+  "LAD": {
+    "probability": 0.72,
+    "risk": "HIGH"
+  },
+  "LCX": {
+    "probability": 0.34,
+    "risk": "MODERATE"
+  },
+  "RCA": {
+    "probability": 0.22,
+    "risk": "LOW"
+  }
+}
+```
 
-- **Global feature importance:** shows which input features the Random Forest model relies on overall.
-- **Patient-specific SHAP explanations:** ranks features by their positive or negative contribution to the selected patient's explanation for CAD, LAD, LCX, or RCA.
+**Note:** These numbers illustrate the expected output structure; they are not verified predictions for the sample patient.
 
-**Interpretation limitation:** The current SHAP calculation explains one fitted Random Forest estimator within the calibrated ensemble. The displayed probability comes from the calibrated model, so the SHAP contributions should not be interpreted as a direct decomposition of that probability. Contributions indicate model behavior, not causation or a medical diagnosis.
+### Step 4: Run the explainability dashboard
 
-### Testing
+If the repository contains a Streamlit dashboard, identify its actual entry-point filename and run it from the project root.
 
-After installing the project dependencies and training the models, run:
+For example, if the entry point is `dashboard.py`:
+
+```bash
+streamlit run dashboard.py
+```
+
+Open the local URL printed in the terminal.
+
+The dashboard is intended to provide global feature importance and patient-specific SHAP explanations. This command applies only if the referenced dashboard file and its dependencies exist in the checked-out repository.
+
+### Step 5: Run the web frontend and API
+
+If the React frontend and Python API are included, follow their respective setup instructions.
+
+**Frontend:**
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+**Backend:** Return to the directory containing the Python API entry point, activate the virtual environment, and start the server using its documented command.
+
+The exact frontend directory, backend entry point, port, and API routes must match the actual repository implementation. Do not assume these commands are available without checking the project files.
+
+## API and Prediction Usage
+
+The core prediction interface is:
+
+```python
+from predict import predict_patient
+
+patient = {
+    # Supply every required model input
+    # using the exact names and values in
+    # docs/input_schema.json.
+}
+
+result = predict_patient(patient)
+print(result)
+```
+
+Replace the illustrative dictionary with a complete, valid patient input.
+
+### Presentation risk categories
+
+The current presentation thresholds are:
+
+| Probability | Category |
+|---|---|
+| Below 0.30 | LOW |
+| 0.30 to below 0.60 | MODERATE |
+| 0.60 and above | HIGH |
+
+These categories are application-level visualization choices, not clinically validated diagnostic thresholds.
+
+The probability is a model estimate, not a definitive measure of a patient's actual disease status.
+
+## Explainability Dashboard
+
+The explainability component is designed around two views:
+
+**1. Global Feature Importance**
+
+Shows the features that influence the fitted Random Forest model across the evaluated dataset.
+
+**2. Patient-Specific SHAP Explanations**
+
+Ranks input features according to their positive or negative contribution to an individual model prediction for CAD, LAD, LCX, or RCA.
+
+### Interpretation limitation
+
+The current SHAP implementation explains an individual fitted Random Forest estimator within the calibrated ensemble. The probability displayed by the application comes from the calibrated model.
+
+Consequently, SHAP contributions should not be interpreted as a direct mathematical decomposition of the calibrated probability. They explain model behavior and do not establish causation or provide a medical diagnosis.
+
+## Project Structure
+
+```text
+cardiovascular-project/
+├── app.py
+├── dashboard.py
+├── explain.py
+├── make_schema.py
+├── predict.py
+├── train.py
+├── train_cad.py
+├── requirements.txt
+├── README.md
+├── datasets/
+│   ├── cardio_train.csv
+│   └── z_alizadeh_sani_extension.xlsx
+├── docs/
+│   ├── input_schema.json
+│   ├── sample_patient.json
+│   └── member1_documentation.md
+├── notebooks/
+│   ├── EDA.ipynb
+│   └── EDA_sani.ipynb
+├── reports/
+│   └── cv_metrics.csv
+├── models/
+│   └── cad_models.joblib
+└── tests/
+    └── test_member2.py
+```
+
+This tree illustrates the documented project components. Some files and directories may be generated locally or may not yet be present in the repository. The trained model file is created by the training pipeline and should not be assumed to exist immediately after cloning.
+
+The older `app.py` and `train.py` baseline uses a different cardiovascular dataset and is separate from the Z-Alizadeh Sani Track A pipeline.
+
+## Testing
+
+After installing dependencies and training the models, run:
 
 ```bash
 pytest -q tests/test_member2.py
 ```
 
-The tests check prediction outputs, input reporting, feature importance, and SHAP explanation outputs for all four targets.
+The documented tests check prediction outputs, input reporting, feature importance, and SHAP explanation outputs for all four targets.
 
-CardioVision is an educational research prototype, not a clinically validated diagnostic tool.
+If the test file is absent from the repository, inspect the available tests and update this command to match the actual test suite.
+
+## Limitations
+
+- The dataset contains only 303 patients, which limits the evidence available for generalization.
+- The LCX and RCA models have comparatively weak recall.
+- Risk thresholds are intended for presentation, not clinical decision-making.
+- Model probabilities and explanations can be affected by data quality, preprocessing, and model calibration.
+- Missing values must be handled consistently with the model's training pipeline.
+- The model has not been established as a clinically validated diagnostic system.
+- The 3D visualization is a representation of model predictions, not a replacement for angiography or other clinical imaging.
+
+## Future Improvements
+
+- Complete the integration between the prediction API and interactive heart visualization.
+- Improve artery-specific evaluation and calibration.
+- Add automated input validation and clear error messages.
+- Extend explainability and document the behavior of each model.
+- Add reproducible training, testing, and deployment workflows.
+- Evaluate performance on independent datasets before considering any clinical application.
+
+## Dataset Attribution
+
+The project uses an extension of the Z-Alizadeh Sani dataset from the UCI Machine Learning Repository.
+
+Dataset source: https://archive.ics.uci.edu/
+
+Refer to the dataset's official documentation and associated publication for attribution, licensing, and permitted usage.
+
+---
+
+**CardioVision — Multimodal AI Hackathon 2026, Track A**
+
+Built as an educational research prototype for cardiovascular risk prediction, explainability, and interactive visualization.

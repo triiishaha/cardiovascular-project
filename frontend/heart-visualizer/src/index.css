@@ -1,111 +1,993 @@
-:root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+(.venv) PS C:\Users\ASUS\Desktop\WEB DEVELOPMENT\cardiovascular-project\cardiovascular-project> Get-Content frontend\heart-visualizer\src\App.jsx
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+import { useState, useRef, useEffect, useMemo } from "react";
+import { Canvas } from "@react-three/fiber";
+import {
+  OrbitControls,
+  Center,
+  useGLTF,
+  Html,
+  Bounds,
+} from "@react-three/drei";
+import "./App.css";
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+const API_URL = "http://127.0.0.1:5000";
+const vessels = {
+  LAD: {
+    color: "#ef4444",
+    description: "Left Anterior Descending artery",
+    position: [-1.15, -0.45, 0.2],
+  },
+  LCX: {
+    color: "#22c55e",
+    description: "Left Circumflex artery",
+    position: [1.05, 0.25, 0.2],
+  },
+  RCA: {
+    color: "#facc15",
+    description: "Right Coronary Artery",
+    position: [1.05, -0.65, 0.2],
+  },
+};
 
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
+const RISK_COLORS = {
+  HIGH: "#ef4444",
+  MEDIUM: "#f59e0b",
+  LOW: "#22c55e",
+};
+
+function getRiskColor(risk, fallback) {
+  return RISK_COLORS[risk] || fallback;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+function HeartModel({ displayVessels }) {
+  const { scene } = useGLTF("/models/heart_clear.glb");
+
+  // Keep the original cached GLB scene unchanged.
+  const heartScene = useMemo(() => scene.clone(true), [scene]);
+
+  useEffect(() => {
+    heartScene.traverse((object) => {
+      if (
+        !object.isMesh ||
+        !Object.prototype.hasOwnProperty.call(vessels, object.name)
+      ) {
+        return;
+      }
+
+      const vesselData = displayVessels[object.name];
+
+      // Preserve the original material color for unavailable predictions.
+      if (!object.userData.originalVesselColor) {
+        object.userData.originalVesselColor =
+          object.material.color?.getHexString
+            ? `#${object.material.color.getHexString()}`
+            : vessels[object.name].color;
+      }
+
+      // Clone once so other meshes/materials are not unintentionally changed.
+      if (!object.userData.vesselMaterialCloned) {
+        if (Array.isArray(object.material)) {
+          object.material = object.material.map((material) =>
+            material.clone()
+          );
+        } else {
+          object.material = object.material.clone();
+        }
+
+        object.userData.vesselMaterialCloned = true;
+      }
+
+      const fallbackColor =
+        object.userData.originalVesselColor || vessels[object.name].color;
+
+      const color =
+        vesselData?.risk && vesselData.risk !== "Unavailable"
+          ? getRiskColor(vesselData.risk, fallbackColor)
+          : fallbackColor;
+
+      const materials = Array.isArray(object.material)
+        ? object.material
+        : [object.material];
+
+      materials.forEach((material) => {
+        if (material.color) {
+          material.color.set(color);
+          material.needsUpdate = true;
+        }
+      });
+    });
+  }, [
+    heartScene,
+    displayVessels.LAD?.risk,
+    displayVessels.LCX?.risk,
+    displayVessels.RCA?.risk,
+  ]);
+
+  return (
+    <Bounds fit clip observe margin={1.35}>
+      <Center>
+        <primitive object={heartScene} />
+      </Center>
+    </Bounds>
+  );
+}
+
+function VesselLabel({ name, data, onSelect, selected }) {
+  return (
+    <Html
+      position={data.position}
+      center
+      distanceFactor={7}
+      style={{ pointerEvents: "auto" }}
+    >
+      <button
+        className={`heart-label ${selected ? "label-active" : ""}`}
+        style={{ "--vessel-color": data.color }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(name);
+        }}
+      >
+        <span>{name}</span>
+        <strong>
+          {data.probability == null
+            ? "--"
+            : `${data.probability.toFixed(2)}%`}
+        </strong>
+      </button>
+    </Html>
+  );
+}
+
+function App() {
+  const [selected, setSelected] = useState("LAD");
+  const [predictions, setPredictions] = useState(null);
+  const [cadPrediction, setCadPrediction] = useState(null);
+  const [apiStatus, setApiStatus] = useState("CONNECTING");
+  const [error, setError] = useState("");
+  const [retryCount, setRetryCount] = useState(0);
+  const controlsRef = useRef();
+
+  
+useEffect(() => {
+  let cancelled = false;
+
+  async function checkBackend() {
+    try {
+      setApiStatus("CONNECTING");
+      setError("");
+
+      const response = await fetch(`${API_URL}/api/health`);
+
+      if (!response.ok) {
+        throw new Error("Backend health check failed.");
+      }
+
+      const result = await response.json();
+
+      if (cancelled) return;
+
+      if (result.status === "ok") {
+        setApiStatus("BACKEND CONNECTED");
+      } else {
+        throw new Error("Backend response sahi nahi hai.");
+      }
+    } catch (error) {
+      if (cancelled) return;
+      setApiStatus("CONNECTION FAILED");
+      setError(error.message);
+    }
   }
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+  checkBackend();
+
+  return () => {
+    cancelled = true;
+  };
+}, [retryCount]);
+
+  const displayVessels = Object.fromEntries(
+    Object.entries(vessels).map(([name, vessel]) => {
+      const prediction = predictions?.[name];
+      const risk = prediction?.risk ?? "Unavailable";
+
+      return [
+        name,
+        {
+          ...vessel,
+          probability:
+            typeof prediction?.probability === "number"
+              ? prediction.probability * 100
+              : null,
+          risk,
+          color: getRiskColor(risk, vessel.color),
+        },
+      ];
+    })
+  );
+
+  const vessel = displayVessels[selected];
+
+  function resetView() {
+    controlsRef.current?.reset();
   }
+
+  function formatScore(score) {
+    return typeof score === "number"
+      ? `${(score * 100).toFixed(2)}%`
+      : "--";
+  }
+
+  function retryPrediction() {
+    setRetryCount((count) => count + 1);
+  }
+
+  return (
+    <div className="app">
+      <header className="header">
+        <div className="brand">
+          <div className="brand-icon">â™¥</div>
+          <div>
+            <h1>CardioVision AI</h1>
+            <p>3D Coronary Artery Risk Visualization</p>
+          </div>
+        </div>
+
+        <span
+          className="status"
+          style={{
+            color:
+              apiStatus === "LIVE MODEL CONNECTED"
+                ? "#22c55e"
+                : apiStatus === "CONNECTING"
+                ? "#facc15"
+                : "#ef4444",
+          }}
+        >
+          {apiStatus}
+        </span>
+      </header>
+
+      <main className="dashboard">
+        <section className="heart-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Interactive 3D Heart</h2>
+              <p>Drag to rotate Â· Scroll to zoom</p>
+            </div>
+          </div>
+
+          <div className="canvas-container">
+            <Canvas
+              camera={{ position: [0, 0, 6], fov: 40 }}
+              dpr={[1, 1.5]}
+              gl={{ antialias: true }}
+            >
+              <color attach="background" args={["#0f172a"]} />
+
+              <ambientLight intensity={1.8} />
+              <directionalLight
+                position={[5, 6, 5]}
+                intensity={2.2}
+              />
+              <directionalLight
+                position={[-5, 2, -5]}
+                intensity={1.2}
+              />
+
+              <HeartModel displayVessels={displayVessels} />
+
+              {Object.entries(displayVessels).map(([name, data]) => (
+                <VesselLabel
+                  key={name}
+                  name={name}
+                  data={data}
+                  selected={selected === name}
+                  onSelect={setSelected}
+                />
+              ))}
+
+              <OrbitControls
+                ref={controlsRef}
+                makeDefault
+                enablePan={false}
+                enableZoom
+                minDistance={2}
+                maxDistance={12}
+                rotateSpeed={0.8}
+              />
+            </Canvas>
+          </div>
+
+          <div className="viewer-controls">
+            <button onClick={resetView}>â†» Reset View</button>
+            <span>Mouse drag: Rotate</span>
+            <span>Scroll: Zoom</span>
+          </div>
+
+          <div className="legend">
+            {Object.entries(displayVessels).map(([name, data]) => (
+              <button
+                key={name}
+                className={
+                  selected === name
+                    ? "legend-item active"
+                    : "legend-item"
+                }
+                onClick={() => setSelected(name)}
+              >
+                <span
+                  className="dot"
+                  style={{ backgroundColor: data.color }}
+                />
+                {name}
+                <strong>
+                  {data.probability == null
+                    ? "--"
+                    : `${data.probability.toFixed(2)}%`}
+                </strong>
+              </button>
+            ))}
+          </div>
+
+          <div className="risk-legend">
+            <strong>Model probability scale</strong>
+            <span>
+              <i className="scale-dot green" /> LOW
+            </span>
+            <span>
+              <i className="scale-dot yellow" /> MEDIUM
+            </span>
+            <span>
+              <i className="scale-dot red" /> HIGH
+            </span>
+          </div>
+        </section>
+
+        <aside className="details-panel">
+          <div className="details-heading">
+            <h2>Prediction Details</h2>
+            <p>Results from the trained ML model</p>
+          </div>
+
+          {error && (
+            <div role="alert" className="error-message">
+              <strong>Prediction load nahi hui</strong>
+              <p>{error}</p>
+              <button onClick={retryPrediction}>Retry</button>
+            </div>
+          )}
+
+          <div className="vessel-card">
+            <div className="vessel-title">
+              <strong>CAD â€” Overall indicator</strong>
+              <span className="percentage">
+                {formatScore(cadPrediction?.probability)}
+              </span>
+            </div>
+            <p>Coronary artery disease model output</p>
+            <p>
+              Model risk: {cadPrediction?.risk ?? "Unavailable"}
+            </p>
+          </div>
+
+          {Object.entries(displayVessels).map(([name, data]) => (
+            <button
+              key={name}
+              className={
+                selected === name
+                  ? "vessel-card selected"
+                  : "vessel-card"
+              }
+              onClick={() => setSelected(name)}
+            >
+              <div className="vessel-title">
+                <span
+                  className="dot"
+                  style={{ backgroundColor: data.color }}
+                />
+                <strong>{name}</strong>
+                <span className="percentage">
+                  {data.probability == null
+                    ? "--"
+                    : `${data.probability.toFixed(2)}%`}
+                </span>
+              </div>
+
+              <p>{data.description}</p>
+              <p>Model risk: {data.risk}</p>
+
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(100, data.probability ?? 0)
+                    )}%`,
+                    backgroundColor: data.color,
+                  }}
+                />
+              </div>
+            </button>
+          ))}
+
+          <div className="selected-details">
+            <span
+              className="selected-dot"
+              style={{ backgroundColor: vessel.color }}
+            />
+            <h3>Selected: {selected}</h3>
+            <p>{vessel.description}</p>
+
+            <div className="selected-probability">
+              <span>Model-predicted probability</span>
+              <strong style={{ color: vessel.color }}>
+                {vessel.probability == null
+                  ? "--"
+                  : `${vessel.probability.toFixed(2)}%`}
+              </strong>
+            </div>
+
+            <p>Model risk: {vessel.risk}</p>
+          </div>
+
+          <section className="factors-panel">
+            <h2>Prediction Information</h2>
+            <p className="factor-subtitle">
+              Output returned by the trained model
+            </p>
+
+            <p>
+              The probabilities displayed here come from the API
+              response. They are model-predicted probabilities,
+              not measured blockage percentages.
+            </p>
+
+            {predictions?.missing_inputs?.length > 0 && (
+              <p>
+                Missing input fields:{" "}
+                {predictions.missing_inputs.join(", ")}
+              </p>
+            )}
+
+            {predictions?.ignored_inputs?.length > 0 && (
+              <p>
+                Ignored input fields:{" "}
+                {predictions.ignored_inputs.join(", ")}
+              </p>
+            )}
+          </section>
+
+          <p className="disclaimer">
+            Research/demo output only. Model probabilities are not
+            a clinical diagnosis and should not be used alone for
+            medical decisions.
+          </p>
+        </aside>
+      </main>
+    </div>
+  );
+}
+
+useGLTF.preload("/models/heart_clear.glb");
+
+export default App;
+
+(.venv) PS C:\Users\ASUS\Desktop\WEB DEVELOPMENT\cardiovascular-project\cardiovascular-project> Get-Content frontend\heart-visualizer\src\App.css
+
+
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  color: #f1f5f9;
+  background: #080e1c;
+  font-synthesis: none;
 }
 
 body {
   margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #080e1c;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
+button {
+  font: inherit;
+}
+
+.app {
+  width: min(1440px, 100%);
+  min-height: 100vh;
   margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
+  padding: 24px;
+  border-left: 1px solid #263249;
+  border-right: 1px solid #263249;
+  background: #0b1220;
+}
+
+.header {
   display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 24px;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+.brand-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: #ef4444;
+  color: white;
+  font-size: 27px;
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
+
+.header h1 {
   margin: 0;
+  color: #f8fafc;
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -1px;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
-}
-
-code {
+.header p {
+  margin: 5px 0 0;
+  color: #94a3b8;
   font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+}
+
+.status {
+  padding: 12px 15px;
+  border: 1px solid #34445f;
+  border-radius: 9px;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dashboard {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(330px, 0.9fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.heart-panel,
+.details-panel {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #293850;
+  border-radius: 17px;
+  background: #141f33;
+  box-shadow: 0 8px 28px #0002;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.panel-heading h2,
+.details-heading h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.panel-heading p,
+.details-heading p {
+  margin: 7px 0 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.canvas-container {
+  position: relative;
+  width: 100%;
+  height: 520px;
+  min-height: 420px;
+  overflow: hidden;
+  border-radius: 13px;
+  background: #0f172a;
+}
+
+.canvas-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  outline: none;
+}
+
+.heart-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 1.5px solid var(--vessel-color);
+  border-radius: 8px;
+  background: #111c30;
+  color: #f8fafc;
+  white-space: nowrap;
+  font-size: 13px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px #0005;
+}
+
+.heart-label strong {
+  color: var(--vessel-color);
+}
+
+.heart-label:hover,
+.heart-label.label-active {
+  box-shadow: 0 0 0 2px var(--vessel-color);
+}
+
+.viewer-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 13px;
+  margin: 14px 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.viewer-controls button {
+  padding: 10px 13px;
+  border: 1px solid #34445f;
+  border-radius: 8px;
+  background: #1e293b;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.viewer-controls button:hover {
+  background: #334155;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: #1a263b;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.legend-item.active {
+  border-color: #60a5fa;
+  background: #22334d;
+}
+
+.legend-item strong {
+  font-size: 12px;
+}
+
+.dot {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.risk-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 13px;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.risk-legend strong {
+  width: 100%;
+  color: #f8fafc;
+}
+
+.risk-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scale-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.scale-dot.green {
+  background: #22c55e;
+}
+
+.scale-dot.yellow {
+  background: #facc15;
+}
+
+.scale-dot.red {
+  background: #ef4444;
+}
+
+.details-heading {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.vessel-card {
+  display: block;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 15px;
+  border: 1px solid #344158;
+  border-radius: 12px;
+  background: #1a263b;
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vessel-card:hover {
+  border-color: #64748b;
+}
+
+.vessel-card.selected {
+  border: 1.5px solid #60a5fa;
+  background: #1b2a40;
+}
+
+.vessel-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.vessel-title strong {
+  font-size: 16px;
+}
+
+.percentage {
+  margin-left: auto;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.vessel-card p {
+  margin: 12px 0;
+  color: #9caec4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.progress-track {
+  width: 100%;
+  height: 7px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: #354258;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.25s ease;
+}
+
+.selected-details {
+  position: relative;
+  margin-top: 20px;
+  padding: 20px 16px;
+  border-radius: 12px;
+  background: #0f172a;
+  text-align: center;
+}
+
+.selected-details h3 {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.selected-details p {
+  margin: 8px 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.selected-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 7px;
+  border-radius: 50%;
+}
+
+.selected-probability {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.selected-probability strong {
+  font-size: 18px;
+}
+
+.factors-panel {
+  margin-top: 17px;
+  padding: 17px;
+  border: 1px solid #293850;
+  border-radius: 12px;
+  background: #101a2c;
+}
+
+.factors-panel h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.factor-subtitle {
+  margin: 8px 0 18px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.factor-row {
+  margin: 16px 0;
+}
+
+.factor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  color: #e2e8f0;
+  font-size: 13px;
+}
+
+.factor-heading strong {
+  color: #60a5fa;
+}
+
+.factor-track {
+  height: 7px;
+}
+
+.factor-fill {
+  background: #3b82f6;
+}
+
+.factor-note {
+  margin: 14px 0;
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.shap-button {
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #2563eb;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.shap-button:hover {
+  background: #1d4ed8;
+}
+
+.disclaimer {
+  margin: 18px 0 0;
+  color: #fbbf24;
+  font-size: 11px;
+  line-height: 1.7;
+  text-align: center;
+}
+
+@media (max-width: 950px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-container {
+    height: 480px;
+  }
+}
+
+@media (max-width: 560px) {
+  .app {
+    padding: 12px;
+  }
+
+  .header {
+    align-items: flex-start;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .brand-icon {
+    width: 36px;
+    height: 36px;
+    font-size: 22px;
+  }
+
+  .header h1 {
+    font-size: 23px;
+  }
+
+  .header p {
+    font-size: 12px;
+  }
+
+  .status {
+    padding: 8px;
+    font-size: 10px;
+  }
+
+  .heart-panel,
+  .details-panel {
+    padding: 12px;
+  }
+
+  .canvas-container {
+    height: 390px;
+    min-height: 350px;
+  }
+
+  .panel-heading h2,
+  .details-heading h2 {
+    font-size: 19px;
+  }
+
+  .heart-label {
+    gap: 5px;
+    padding: 6px;
+    font-size: 11px;
+  }
 }
