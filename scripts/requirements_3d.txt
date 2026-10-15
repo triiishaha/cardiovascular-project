@@ -1,0 +1,8 @@
+# Only needed to regenerate assets/heart.glb (the .glb itself is committed).
+# Developed with Python 3.10+; versions are left unpinned so pip picks ones compatible with your Python.
+numpy
+scipy
+trimesh
+scikit-image
+pygltflib
+fast-simplification

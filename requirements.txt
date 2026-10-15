@@ -8,3 +8,7 @@ matplotlib==3.9.4      # EDA notebook
 ipykernel>=6.0         # run notebooks in VS Code / Jupyter
 streamlit==1.50.0      # legacy baseline app (app.py)
 seaborn>=0.13          # legacy EDA.ipynb
+shap                   # patient-specific explanations (explain.py, dashboard.py)
+flask>=3.0             # prediction API (api_server.py)
+flask-cors>=4.0
+pytest>=8.0            # tests/tests.py

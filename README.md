@@ -19,6 +19,7 @@ The system uses clinical, ECG, laboratory, and echocardiographic features to gen
 - [Installation and Setup](#installation-and-setup)
 - [Running the Project](#running-the-project)
 - [API and Prediction Usage](#api-and-prediction-usage)
+- [3D Heart Model](#3d-heart-model)
 - [Explainability Dashboard](#explainability-dashboard)
 - [Project Structure](#project-structure)
 - [Testing](#testing)
@@ -31,7 +32,7 @@ The system uses clinical, ECG, laboratory, and echocardiographic features to gen
 - **CAD Prediction:** Estimates the probability of overall coronary artery disease.
 - **Artery-Specific Prediction:** Estimates the probability of stenosis for LAD, LCX, and RCA.
 - **Machine Learning Comparison:** Evaluates Logistic Regression, Random Forest, and Gradient Boosting.
-- **Interactive Heart Visualization:** Intended to connect artery-specific predictions with a 3D heart model.
+- **Interactive Heart Visualization:** A 3D heart in the React frontend whose LAD, LCX and RCA arteries are recoloured from the model's risk output.
 - **Explainable AI:** Provides global feature importance and patient-specific SHAP explanations.
 - **Patient Input Schema:** Defines accepted feature names, types, and allowed values.
 - **Risk Visualization:** Maps model probabilities to LOW, MODERATE, and HIGH presentation categories.
@@ -44,11 +45,12 @@ The system uses clinical, ECG, laboratory, and echocardiographic features to gen
 | Model training and evaluation | Implemented |
 | Exploratory data analysis | Implemented |
 | Patient input schema | Implemented |
-| SHAP explainability | In progress |
-| 3D heart and coronary visualization | In progress |
-| Web dashboard and API integration | In progress |
+| SHAP explainability (global and patient-specific) | Implemented (`explain.py`, `dashboard.py`) |
+| 3D heart model with separate LAD / LCX / RCA nodes | Implemented (`assets/heart.glb`) |
+| Prediction API | Implemented (`api_server.py`, Flask) |
+| Web frontend and 3D risk view | Implemented (`frontend/heart-visualizer`), needs end-to-end testing |
 
-Update this table as individual components become fully implemented and tested.
+Update this table as components change.
 
 ## Dataset
 
@@ -268,21 +270,23 @@ Open the local URL printed in the terminal.
 
 The dashboard is intended to provide global feature importance and patient-specific SHAP explanations. This command applies only if the referenced dashboard file and its dependencies exist in the checked-out repository.
 
-### Step 5: Run the web frontend and API
+### Step 5: Run the API and the web frontend
 
-If the React frontend and Python API are included, follow their respective setup instructions.
-
-**Frontend:**
+Train the models first (Step 1), then start the Flask API (it needs `models/cad_models.joblib`):
 
 ```bash
-cd frontend
-npm install
-npm run dev
+python api_server.py          # http://127.0.0.1:5000  (GET /api/health, POST /api/predict)
 ```
 
-**Backend:** Return to the directory containing the Python API entry point, activate the virtual environment, and start the server using its documented command.
+In a second terminal, start the React frontend (Node.js 18+):
 
-The exact frontend directory, backend entry point, port, and API routes must match the actual repository implementation. Do not assume these commands are available without checking the project files.
+```bash
+cd frontend/heart-visualizer
+npm install
+npm run dev                   # prints the local URL, usually http://localhost:5173
+```
+
+The frontend calls the API at `http://127.0.0.1:5000` (set in `frontend/heart-visualizer/src/App.jsx`).
 
 ## API and Prediction Usage
 
@@ -317,6 +321,30 @@ These categories are application-level visualization choices, not clinically val
 
 The probability is a model estimate, not a definitive measure of a patient's actual disease status.
 
+## 3D Heart Model
+
+`assets/heart.glb` is a stylised anatomical heart (about 3.3 MB, 114k triangles) generated from code by `scripts/make_heart_glb.py`, so it is original and free of third-party licences. It is not CT-derived and not patient-specific. The frontend uses a copy at `frontend/heart-visualizer/public/models/heart_clear.glb`.
+
+- **How it is made:** signed-distance fields and marching cubes (scikit-image), Taubin smoothing and mesh decimation, tube meshes for the arteries snapped to the heart surface, exported with trimesh and post-processed with pygltflib. The result passes the official glTF validator with no errors.
+- **Named nodes:** `Ventricles`, `Atria`, `Aorta`, `PulmonaryTrunk`, `SVC`, `IVC`, `PulmonaryVeins`, and the arteries **`LAD`**, **`LCX`**, **`RCA`**. Each artery (with its branches) is one mesh with its own material.
+- **Colours:** stored in the materials, so they show in any viewer. Default artery colours are LAD red, LCX green, RCA yellow.
+- **Orientation:** Y up, `+Z` is the front of the patient, `+X` is the patient's left; 1 unit is about 10 cm. Artery thickness is exaggerated about 1.5 times so they are visible and clickable. The vessel layout is schematic.
+
+Recolour an artery from a prediction (Three.js):
+
+```js
+const gltf = await new GLTFLoader().loadAsync("assets/heart.glb");
+const prob = { LAD: 0.88, LCX: 0.16, RCA: 0.63 };   // from predict_patient()
+gltf.scene.traverse(o => {
+  if (o.isMesh && o.name in prob)
+    o.material.color.setHSL((1 - prob[o.name]) * 0.33, 0.85, 0.5);   // green to red
+});
+```
+
+To rebuild the model: `pip install -r scripts/requirements_3d.txt`, then `python scripts/make_heart_glb.py assets/heart.glb`.
+
+![Heart model with LAD red, LCX green, RCA yellow](assets/heart_preview.png)
+
 ## Explainability Dashboard
 
 The explainability component is designed around two views:
@@ -341,6 +369,7 @@ Consequently, SHAP contributions should not be interpreted as a direct mathemati
 cardiovascular-project/
 ├── app.py
 ├── dashboard.py
+├── api_server.py
 ├── explain.py
 ├── make_schema.py
 ├── predict.py
@@ -351,6 +380,14 @@ cardiovascular-project/
 ├── datasets/
 │   ├── cardio_train.csv
 │   └── z_alizadeh_sani_extension.xlsx
+├── assets/
+│   ├── heart.glb
+│   └── heart_preview.png
+├── frontend/
+│   └── heart-visualizer/
+├── scripts/
+│   ├── make_heart_glb.py
+│   └── requirements_3d.txt
 ├── docs/
 │   ├── input_schema.json
 │   ├── sample_patient.json
@@ -363,7 +400,7 @@ cardiovascular-project/
 ├── models/
 │   └── cad_models.joblib
 └── tests/
-    └── test_member2.py
+    └── tests.py
 ```
 
 This tree illustrates the documented project components. Some files and directories may be generated locally or may not yet be present in the repository. The trained model file is created by the training pipeline and should not be assumed to exist immediately after cloning.
@@ -375,12 +412,10 @@ The older `app.py` and `train.py` baseline uses a different cardiovascular datas
 After installing dependencies and training the models, run:
 
 ```bash
-pytest -q tests/test_member2.py
+pytest -q tests/tests.py
 ```
 
 The documented tests check prediction outputs, input reporting, feature importance, and SHAP explanation outputs for all four targets.
-
-If the test file is absent from the repository, inspect the available tests and update this command to match the actual test suite.
 
 ## Limitations
 
@@ -394,7 +429,7 @@ If the test file is absent from the repository, inspect the available tests and 
 
 ## Future Improvements
 
-- Complete the integration between the prediction API and interactive heart visualization.
+- Test the prediction API and 3D risk view end to end, and add API tests.
 - Improve artery-specific evaluation and calibration.
 - Add automated input validation and clear error messages.
 - Extend explainability and document the behavior of each model.
